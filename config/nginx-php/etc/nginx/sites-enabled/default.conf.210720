@@ -1,0 +1,160 @@
+#limit_req_zone $binary_remote_addr zone=mylimit:10m rate=300r/s;
+proxy_cache_path /var/lib/nginx/cache levels=1:2 keys_zone=backcache:8m max_size=50m;
+proxy_cache_key "$scheme$request_method$host$request_uri$is_args$args";
+proxy_cache_valid 200 302 10m;
+proxy_cache_valid 404 1m;
+
+
+
+server {
+	#listen   81; ## listen for ipv4; this line is default and implied
+	#listen   [::]:81 default ipv6only=on; ## listen for ipv6
+listen 80;
+#listen 443 ssl;
+
+root /usr/share/nginx/html;
+index index.php index.html index.htm;
+
+	server_name 0.0.0.0 localhost;
+	error_log /var/log/nginx/nginx.error.log;
+	access_log /var/log/nginx/nginx.access.log;
+
+	location / {
+		# try_files   $uri $uri/ index.php;
+		try_files $uri $uri/ /index.php?$query_string;
+
+               if ($request_filename ~* ^.*?/([^/]*?)$){
+                    set $filename $1;
+                }
+
+                if ($filename ~* ^.*?\.(eot)|(ttf)|(woff)$){
+                    add_header Access-Control-Allow-Origin *;
+                }
+        rewrite  (?i)^/404-events$ /404-events.php last;
+	rewrite  (?i)^/login/([0-9]+)$ /login.php?lives_id=$1 last;
+        rewrite  (?i)^/register$ /register.php last;
+	rewrite  (?i)^/faqs$ /faqs.php last;
+	rewrite  (?i)^/admins-chat/([0-9]+)$ /admins-chat.php?lives_id=$1 last;
+	rewrite  (?i)^/([a-zA-Z0-9_-]+)$ /events.php?url_rewrite=$1 last;
+	}
+
+	location ~ ^/api/(.*)$ {
+          rewrite  ^/api/(.*)$  /api/public/index.php/$1 break;
+          fastcgi_param  SCRIPT_FILENAME $document_root/api/public/index.php;
+          fastcgi_pass unix:/run/php/php-fpm.sock;
+          include         /etc/nginx/fastcgi_params;
+	}	
+
+
+	#location ~ ^/(.*)$ {
+        #     if (-f $document_root/maintenance.html) {
+        #          return 503;
+        #     }
+        #}
+
+        #error_page 503 @maintenance;
+        #location @maintenance {
+        #        rewrite ^(.*)$ /maintenance.html break;
+        #}
+
+
+	error_page 404 /404;
+	error_page 500 502 503 504 /50x.html;
+	location = /50x.html {
+	root /usr/share/nginx/html;
+	}
+
+        # To allow POST on static pages
+        error_page  405     =200 $uri;
+
+
+
+	#Cache everything by default
+	set $no_cache 1;
+
+	#Don't cache POST requests
+	if ($request_method = POST)
+	{
+		set $no_cache 1;
+	}
+
+	#Don't cache if the URL contains a query string
+	if ($query_string != "")
+	{
+		set $no_cache 1;
+	}
+
+	#Don't cache the following URLs
+	if ($request_uri ~* "/(administrator/|login.php)")
+	{
+		set $no_cache 1;
+	}
+
+	#Don't cache if there is a cookie called PHPSESSID
+	if ($http_cookie = "PHPSESSID")
+	{
+		set $no_cache 1;
+	}
+
+location ~ ^/cache/(.*)$  {
+   	  proxy_pass http://127.0.0.1:80/$1$is_args$args;
+   	  proxy_cache backcache;
+   	  proxy_ignore_headers X-Accel-Expires;
+   	  proxy_ignore_headers Expires;
+   	  proxy_ignore_headers Cache-Control;
+   	  proxy_hide_header Cache-Control;
+          proxy_ignore_headers "Set-Cookie";
+          proxy_hide_header "Set-Cookie";
+          proxy_cache_key $uri;
+          proxy_cache_valid 200 10s;
+          expires 10s;
+          add_header X-Proxy-Cache $upstream_cache_status;
+	add_header X-Server Cache2;
+}
+
+
+	location ~ \.php$ {
+		try_files $uri =404;
+		fastcgi_split_path_info ^(.+\.php)(/.+)$;
+		fastcgi_pass unix:/run/php/php-fpm.sock;
+		fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+		fastcgi_param SCRIPT_NAME $fastcgi_script_name;
+		fastcgi_index index.php;
+                fastcgi_read_timeout 180;
+		include fastcgi_params;
+
+		fastcgi_cache apps;
+		fastcgi_cache_valid 200 5m;
+		fastcgi_cache_bypass $no_cache;
+		fastcgi_no_cache $no_cache;
+		add_header x-Fastcgi-Cache $upstream_cache_status;
+	}
+
+	location ~* \.(htm|html|jpg|jpeg|gif|png|css|js|ico|xml)$ {
+		 expires 30d;
+    		add_header Vary Accept-Encoding;
+	    access_log off;
+	}
+
+	# deny access to . files, for security (./hidden files, ./git, .htaccess, .htpasswd)
+	location ~ /\. {
+		log_not_found off;
+		deny all;
+	}
+
+location /live_status {
+    stub_status;
+}
+
+location /php_status {
+     access_log off;
+     #allow 127.0.0.1;
+     #allow 1.2.3.4#your-ip;
+     #deny all;
+     include fastcgi_params;
+     fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+     fastcgi_pass unix:/run/php/php-fpm.sock;
+}
+
+}
+

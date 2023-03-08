@@ -1,0 +1,11 @@
+version: "3"
+services:
+    thestandard-build:
+        hostname: thestandard-build
+        container_name: thestandard-build
+        image: dootvmedia/ubuntu:platform 
+        ports: 
+            - 8080:80
+        environment:
+            - TZ=Asia/Bangkok
+        restart: always
